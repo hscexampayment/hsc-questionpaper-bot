@@ -144,3 +144,47 @@ def get_leaderboard(limit: int = 10):
             "SELECT user_id, first_name, username, points FROM users ORDER BY points DESC LIMIT ?",
             (limit,),
         ).fetchall()
+
+
+def set_points(user_id: int, points: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET points = ? WHERE user_id = ?", (points, user_id))
+        conn.commit()
+
+
+def get_all_users(limit: int = 20, offset: int = 0):
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT user_id, first_name, username, points, joined_at FROM users ORDER BY joined_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+
+
+def get_user_count() -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()
+        return row["cnt"] if row else 0
+
+
+def get_total_referrals() -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) as cnt FROM referrals").fetchone()
+        return row["cnt"] if row else 0
+
+
+def search_user(query: str):
+    with get_conn() as conn:
+        try:
+            uid = int(query)
+            return conn.execute("SELECT * FROM users WHERE user_id = ?", (uid,)).fetchone()
+        except ValueError:
+            q = query.lstrip("@")
+            return conn.execute(
+                "SELECT * FROM users WHERE username LIKE ?", (f"%{q}%",)
+            ).fetchone()
+
+
+def get_all_user_ids():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT user_id FROM users").fetchall()
+        return [r["user_id"] for r in rows]
