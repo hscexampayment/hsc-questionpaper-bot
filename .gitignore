@@ -47,3 +47,14 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pythonlibs/
+pyproject.toml
+uv.lock
+
+# Bot data
+bot/bot_data.db
