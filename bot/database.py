@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "bot_data.db")
 
@@ -14,6 +14,9 @@ RANKS = [
 
 POINTS_PER_REFERRAL = 50
 POINTS_PER_JOIN = 20
+CHECKIN_BASE_POINTS = 10
+CHECKIN_STREAK_BONUS = 2
+CHECKIN_MAX_BONUS = 20
 
 
 def get_rank(points: int) -> str:
@@ -43,12 +46,14 @@ def init_db():
     with get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                user_id     INTEGER PRIMARY KEY,
-                username    TEXT,
-                first_name  TEXT,
-                points      INTEGER DEFAULT 0,
-                referred_by INTEGER,
-                joined_at   TEXT DEFAULT (datetime('now'))
+                user_id        INTEGER PRIMARY KEY,
+                username       TEXT,
+                first_name     TEXT,
+                points         INTEGER DEFAULT 0,
+                referred_by    INTEGER,
+                joined_at      TEXT DEFAULT (datetime('now')),
+                last_checkin   TEXT,
+                checkin_streak INTEGER DEFAULT 0
             )
         """)
         conn.execute("""
@@ -60,6 +65,14 @@ def init_db():
                 UNIQUE(referred_id)
             )
         """)
+        for col, definition in [
+            ("last_checkin",   "TEXT"),
+            ("checkin_streak", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
+            except Exception:
+                pass
         conn.commit()
 
 
@@ -188,3 +201,44 @@ def get_all_user_ids():
     with get_conn() as conn:
         rows = conn.execute("SELECT user_id FROM users").fetchall()
         return [r["user_id"] for r in rows]
+
+
+def do_checkin(user_id: int) -> dict:
+    today = date.today().isoformat()
+    with get_conn() as conn:
+        user = conn.execute("SELECT last_checkin, checkin_streak FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if not user:
+            return {"already_checked_in": False, "points": 0, "streak": 0, "milestone": None}
+
+        last = user["last_checkin"]
+        streak = user["checkin_streak"] or 0
+
+        if last == today:
+            return {"already_checked_in": True, "points": 0, "streak": streak, "milestone": None}
+
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        if last == yesterday:
+            streak += 1
+        else:
+            streak = 1
+
+        bonus = min((streak - 1) * CHECKIN_STREAK_BONUS, CHECKIN_MAX_BONUS)
+        points_earned = CHECKIN_BASE_POINTS + bonus
+
+        conn.execute(
+            "UPDATE users SET last_checkin = ?, checkin_streak = ?, points = points + ? WHERE user_id = ?",
+            (today, streak, points_earned, user_id),
+        )
+        conn.commit()
+
+        milestone = None
+        if streak in (7, 30, 100):
+            milestone = streak
+
+        return {
+            "already_checked_in": False,
+            "points": points_earned,
+            "streak": streak,
+            "bonus": bonus,
+            "milestone": milestone,
+        }

@@ -25,11 +25,15 @@ from database import (
     get_total_referrals,
     search_user,
     get_all_user_ids,
+    do_checkin,
     get_rank,
     next_rank_info,
     RANKS,
     POINTS_PER_REFERRAL,
     POINTS_PER_JOIN,
+    CHECKIN_BASE_POINTS,
+    CHECKIN_STREAK_BONUS,
+    CHECKIN_MAX_BONUS,
 )
 
 logging.basicConfig(
@@ -236,17 +240,72 @@ async def cmd_ranks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _reply(update, text)
 
 
+async def cmd_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    get_or_create_user(user.id, user.username or "", user.first_name or "User")
+
+    result = do_checkin(user.id)
+
+    if result["already_checked_in"]:
+        streak = result["streak"]
+        await update.message.reply_html(
+            f"⏳ <b>Already checked in today!</b>\n\n"
+            f"🔥 Current streak: <b>{streak} day{'s' if streak != 1 else ''}</b>\n\n"
+            f"Come back tomorrow to keep your streak going!"
+        )
+        return
+
+    points = result["points"]
+    streak = result["streak"]
+    bonus = result.get("bonus", 0)
+    milestone = result.get("milestone")
+
+    db_user = get_user(user.id)
+    rank = get_rank(db_user["points"])
+    progress = rank_progress_bar(db_user["points"])
+
+    streak_bar = "🔥" * min(streak, 10)
+
+    text = (
+        f"✅ <b>Daily Check-in!</b>\n"
+        f"{'─' * 28}\n"
+        f"⭐ Points Earned: <b>+{points}</b>\n"
+    )
+    if bonus > 0:
+        text += f"  └ Base: +{CHECKIN_BASE_POINTS}  |  Streak bonus: +{bonus}\n"
+
+    text += (
+        f"\n🔥 Streak: <b>{streak} day{'s' if streak != 1 else ''}</b>  {streak_bar}\n"
+        f"🏅 Rank: <b>{rank}</b>\n"
+        f"⭐ Total Points: <b>{db_user['points']}</b>\n\n"
+        f"📊 {progress}"
+    )
+
+    if milestone:
+        milestone_msgs = {
+            7:   "🎉 <b>7-day streak!</b> You're on fire!",
+            30:  "🏆 <b>30-day streak!</b> Incredible dedication!",
+            100: "👑 <b>100-day streak!</b> Absolute legend!",
+        }
+        text += f"\n\n{milestone_msgs[milestone]}"
+
+    await update.message.reply_html(text)
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🤖 <b>Bot Commands</b>\n"
         f"{'─' * 28}\n"
         "/start — Welcome &amp; referral link\n"
+        "/checkin — Daily check-in reward\n"
         "/profile — Your stats &amp; rank\n"
         "/referral — Referral link &amp; history\n"
         "/leaderboard — Top 10 players\n"
         "/ranks — All ranks &amp; thresholds\n"
         "/help — This message\n\n"
         "💡 <b>How to earn points:</b>\n"
+        f"• Daily check-in → +{CHECKIN_BASE_POINTS} pts (base)\n"
+        f"• Streak bonus → +{CHECKIN_STREAK_BONUS} pts/day (max +{CHECKIN_MAX_BONUS})\n"
         f"• Refer a friend → +{POINTS_PER_REFERRAL} pts\n"
         f"• Join via referral → +{POINTS_PER_JOIN} pts"
     )
@@ -481,6 +540,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("checkin", cmd_checkin))
     app.add_handler(CommandHandler("profile", cmd_profile))
     app.add_handler(CommandHandler("referral", cmd_referral))
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
