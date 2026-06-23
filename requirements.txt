@@ -1,1 +1,2 @@
-python-telegram-bot==20.7
+
+github.com/hscexampayment/hsc-questionpaper-bot/edit/main/requirements.txt
