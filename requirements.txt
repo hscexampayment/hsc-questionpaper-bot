@@ -1,2 +1,2 @@
-
-github.com/hscexampayment/hsc-questionpaper-bot/edit/main/requirements.txt
+python-telegram-bot[webhooks]==20.7
+aiohttp==3.9.5
